@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+sqlmodel
+python-multipart
+psycopg2-binary

@@ -1,0 +1,259 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vacation Splitter</title>
+  <style>
+    :root { --bg:#0f1220; --card:#171a2b; --line:#2a2f45; --text:#eaf0ff; --muted:#9aa7c7; --accent:#7c3aed; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 18px; display: grid; gap: 14px; }
+    .title { font-size: 22px; font-weight: 900; }
+    .sub { color: var(--muted); margin-top: 6px; }
+    .card { background: var(--card); border:1px solid var(--line); border-radius: 18px; padding: 14px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    input { background: transparent; color: var(--text); border:1px solid var(--line); border-radius: 14px; padding: 10px 12px; outline:none; flex:1; min-width: 180px; }
+    button { background: var(--accent); color: var(--text); border:1px solid var(--accent); border-radius: 14px; padding: 10px 12px; font-weight: 800; cursor: pointer; }
+    button.secondary { background: transparent; border-color: var(--line); }
+    .pill { display:inline-flex; gap:8px; align-items:center; padding: 8px 10px; border:1px solid var(--line); border-radius: 999px; color: var(--text); cursor:pointer; user-select:none; }
+    .pill.on { border-color: var(--accent); background: rgba(124,58,237,.22); }
+    .muted { color: var(--muted); }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+    table { width:100%; border-collapse: collapse; border:1px solid var(--line); border-radius: 14px; overflow:hidden; }
+    th, td { padding: 10px; border-top: 1px solid var(--line); text-align:left; font-size: 13px; }
+    th { color: var(--muted); background: rgba(255,255,255,.03); border-top: none; }
+    .code { font-weight:900; letter-spacing: 1px; }
+    .warn { color: #ffd37a; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div>
+      <div class="title">Vacation Splitter</div>
+      <div class="sub">Create a trip, share the code, everyone adds expenses (with per-expense participants), then settle up.</div>
+      <div class="sub warn">Local-only right now. To let friends use it, deploy this server for a public URL.</div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="row">
+          <input id="tripName" placeholder="Trip name (e.g., Cabo 2026)" />
+          <button id="createTripBtn">Create Trip</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <input id="joinCode" placeholder="Join code (e.g., A1B2C3)" />
+          <button class="secondary" id="joinTripBtn">Join Trip</button>
+        </div>
+        <div id="tripInfo" class="muted" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <input id="memberName" placeholder="Add friend name" />
+          <button id="addMemberBtn">Add Friend</button>
+        </div>
+        <div id="members" class="muted" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <input id="desc" placeholder="Expense description (Dinner, Uber...)" />
+        <input id="amount" placeholder="Amount (e.g., 42.50)" />
+      </div>
+
+      <div class="muted" style="margin-top:10px">Paid by</div>
+      <div id="payerPills" class="row" style="margin-top:8px"></div>
+
+      <div class="muted" style="margin-top:10px">Split among</div>
+      <div id="partPills" class="row" style="margin-top:8px"></div>
+
+      <div class="row" style="margin-top:12px">
+        <button id="addExpenseBtn">Add Expense</button>
+        <button class="secondary" id="refreshBtn">Refresh</button>
+        <button class="secondary" id="settleBtn">Calculate Who Owes Who</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:900; margin-bottom:10px">Expenses</div>
+      <div id="expensesWrap" class="muted">(none yet)</div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:900; margin-bottom:10px">Settlement</div>
+      <div id="settlementWrap" class="muted">(click Calculate)</div>
+    </div>
+  </div>
+
+<script>
+  // Change API_BASE if you deploy to a domain later
+  const API_BASE = "http://127.0.0.1:8000";
+
+  let trip = null;
+  let members = [];
+  let payerId = null;
+  let selectedParts = {}; // memberId -> bool
+
+  const $ = (id) => document.getElementById(id);
+
+  function fmtMoney(n){ return `$${Number(n).toFixed(2)}`; }
+
+  function renderTrip(){
+    $("tripInfo").innerHTML = trip
+      ? `Trip: <b>${trip.name}</b> • Code: <span class="code">${trip.code}</span>`
+      : "No trip joined yet.";
+  }
+
+  function renderMembers(){
+    $("members").innerHTML = members.length ? `Friends: <b>${members.map(m => m.name).join(", ")}</b>` : "(none yet)";
+  }
+
+  function pill(name, on, onclick){
+    const d = document.createElement("div");
+    d.className = "pill" + (on ? " on" : "");
+    d.textContent = (on ? "✓ " : "") + name;
+    d.onclick = onclick;
+    return d;
+  }
+
+  function renderPills(){
+    $("payerPills").innerHTML = "";
+    $("partPills").innerHTML = "";
+
+    members.forEach(m => {
+      $("payerPills").appendChild(
+        pill(m.name, payerId === m.id, () => { payerId = m.id; renderPills(); })
+      );
+      $("partPills").appendChild(
+        pill(m.name, !!selectedParts[m.id], () => { selectedParts[m.id] = !selectedParts[m.id]; renderPills(); })
+      );
+    });
+  }
+
+  async function api(path, opts={}){
+    const res = await fetch(API_BASE + path, {
+      headers: { "Content-Type": "application/json" },
+      ...opts
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch {}
+    if (!res.ok) throw new Error((data && (data.detail || data.message)) || text || res.statusText);
+    return data;
+  }
+
+  async function refreshAll(){
+    if (!trip) return;
+    members = await api(`/api/trips/${trip.code}/members`);
+    if (!payerId && members.length) payerId = members[0].id;
+    // default select all
+    const next = {};
+    members.forEach(m => next[m.id] = true);
+    selectedParts = { ...next, ...selectedParts }; // keep any existing toggles
+
+    renderTrip(); renderMembers(); renderPills();
+    await refreshExpenses();
+  }
+
+  async function refreshExpenses(){
+    const exps = trip ? await api(`/api/trips/${trip.code}/expenses`) : [];
+    if (!exps.length) {
+      $("expensesWrap").innerHTML = "<span class='muted'>(none yet)</span>";
+      return;
+    }
+    const nameById = Object.fromEntries(members.map(m => [m.id, m.name]));
+    const rows = exps.map(e => `
+      <tr>
+        <td>${e.description}</td>
+        <td>${nameById[e.payer_member_id] || e.payer_member_id}</td>
+        <td>${fmtMoney(e.amount)}</td>
+        <td class="muted">${(e.participants||[]).map(id => nameById[id] || id).join(", ")}</td>
+      </tr>
+    `).join("");
+    $("expensesWrap").innerHTML = `
+      <table>
+        <thead><tr><th>Description</th><th>Payer</th><th>Amount</th><th>Split among</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  async function calcSettlement(){
+    if (!trip) return;
+    const res = await api(`/api/trips/${trip.code}/settlement`);
+    const netLines = Object.entries(res.net || {}).map(([name, n]) => {
+      const sign = Number(n) > 0 ? "+" : "";
+      return `<div>${name}: <b>${sign}${fmtMoney(n).replace("$","$")}</b></div>`;
+    }).join("");
+
+    const transfers = (res.transfers || []);
+    const tLines = transfers.length
+      ? transfers.map(t => `<div>${t[0]} → ${t[1]} <b>${fmtMoney(t[2])}</b></div>`).join("")
+      : "<div>Everyone is settled 🎉</div>";
+
+    $("settlementWrap").innerHTML = `
+      <div class="muted">Net balances (positive = gets money back, negative = owes):</div>
+      <div style="margin-top:8px">${netLines || "(none)"}</div>
+      <div class="muted" style="margin-top:12px">Who pays who:</div>
+      <div style="margin-top:8px">${tLines}</div>
+    `;
+  }
+
+  $("createTripBtn").onclick = async () => {
+    const name = $("tripName").value.trim();
+    if (!name) return alert("Enter a trip name.");
+    trip = await api("/api/trips", { method:"POST", body: JSON.stringify({ name }) });
+    payerId = null; selectedParts = {};
+    await refreshAll();
+  };
+
+  $("joinTripBtn").onclick = async () => {
+    const code = $("joinCode").value.trim().toUpperCase();
+    if (!code) return alert("Enter a join code.");
+    trip = await api(`/api/trips/${code}`);
+    payerId = null; selectedParts = {};
+    await refreshAll();
+  };
+
+  $("addMemberBtn").onclick = async () => {
+    if (!trip) return alert("Create or join a trip first.");
+    const name = $("memberName").value.trim();
+    if (!name) return alert("Enter a name.");
+    await api(`/api/trips/${trip.code}/members`, { method:"POST", body: JSON.stringify({ name }) });
+    $("memberName").value = "";
+    await refreshAll();
+  };
+
+  $("addExpenseBtn").onclick = async () => {
+    if (!trip) return alert("Create or join a trip first.");
+    const description = $("desc").value.trim();
+    const amount = Number($("amount").value);
+    if (!description) return alert("Enter a description.");
+    if (!Number.isFinite(amount) || amount <= 0) return alert("Enter a valid amount.");
+    if (!payerId) return alert("Choose who paid.");
+
+    const participants = members.filter(m => selectedParts[m.id]).map(m => m.id);
+    if (!participants.length) return alert("Pick at least one participant.");
+
+    await api(`/api/trips/${trip.code}/expenses`, {
+      method:"POST",
+      body: JSON.stringify({ description, amount, payer_member_id: payerId, participants })
+    });
+
+    $("desc").value = "";
+    $("amount").value = "";
+    // default back to all
+    members.forEach(m => selectedParts[m.id] = true);
+    renderPills();
+    await refreshExpenses();
+  };
+
+  $("refreshBtn").onclick = refreshAll;
+  $("settleBtn").onclick = calcSettlement;
+
+  renderTrip(); renderMembers(); renderPills();
+</script>
+</body>
+</html>
