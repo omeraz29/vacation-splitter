@@ -47,7 +47,7 @@ class ExpenseParticipant(SQLModel, table=True):
 app = FastAPI(title="Vacation Splitter API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5500", "http://localhost:5500"],   # tighten later for production
+    allow_origins=["http://127.0.0.1:5500", "http://localhost:5500", "https://delightful-cranachan-75e6bd.netlify.app"],   # tighten later for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -302,3 +302,4 @@ def settlement(code: str):
         transfers_named = [(names[a], names[b], amt) for (a, b, amt) in res["transfers"]]
 
         return {"members": names, "net": net_named, "transfers": transfers_named}
+
