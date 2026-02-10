@@ -13,8 +13,24 @@
     .card { background: var(--card); border:1px solid var(--line); border-radius: 18px; padding: 14px; }
     .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     input { background: transparent; color: var(--text); border:1px solid var(--line); border-radius: 14px; padding: 10px 12px; outline:none; flex:1; min-width: 180px; }
-    button { background: var(--accent); color: var(--text); border:1px solid var(--accent); border-radius: 14px; padding: 10px 12px; font-weight: 800; cursor: pointer; }
-    button.secondary { background: transparent; border-color: var(--line); }
+    button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+button.secondary {
+  background: var(--accent);
+}
     .pill { display:inline-flex; gap:8px; align-items:center; padding: 8px 10px; border:1px solid var(--line); border-radius: 999px; color: var(--text); cursor:pointer; user-select:none; }
     .pill.on { border-color: var(--accent); background: rgba(124,58,237,.22); }
     .muted { color: var(--muted); }
@@ -256,5 +272,6 @@
 </script>
 </body>
 </html>
+
 
 
