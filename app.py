@@ -47,7 +47,7 @@ class ExpenseParticipant(SQLModel, table=True):
 app = FastAPI(title="Vacation Splitter API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5500", "http://localhost:5500", "https://delightful-cranachan-75e6bd.netlify.app", "YOUR_NEW_NETLIFY_URL"],   # replace YOUR_NEW_NETLIFY_URL
+    allow_origins=["http://127.0.0.1:5500", "http://localhost:5500", "https://delightful-cranachan-75e6bd.netlify.app", "https://triptipsandtools.netlify.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -353,3 +353,4 @@ def update_expense(expense_id: int, payload: dict):
 
         s.commit()
         return {"ok": True}
+
