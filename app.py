@@ -47,7 +47,7 @@ class ExpenseParticipant(SQLModel, table=True):
 app = FastAPI(title="Vacation Splitter API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5500", "http://localhost:5500", "https://delightful-cranachan-75e6bd.netlify.app"],   # tighten later for production
+    allow_origins=["http://127.0.0.1:5500", "http://localhost:5500", "https://delightful-cranachan-75e6bd.netlify.app", "YOUR_NEW_NETLIFY_URL"],   # replace YOUR_NEW_NETLIFY_URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -303,3 +303,53 @@ def settlement(code: str):
 
         return {"members": names, "net": net_named, "transfers": transfers_named}
 
+
+@app.delete("/api/expenses/{expense_id}")
+def delete_expense(expense_id: int):
+    with Session(engine) as s:
+        expense = s.get(Expense, expense_id)
+        if not expense:
+            raise HTTPException(404, "Expense not found")
+        # Delete participants first (foreign key)
+        parts = s.exec(select(ExpenseParticipant).where(ExpenseParticipant.expense_id == expense_id)).all()
+        for p in parts:
+            s.delete(p)
+        s.delete(expense)
+        s.commit()
+        return {"ok": True}
+
+
+@app.put("/api/expenses/{expense_id}")
+def update_expense(expense_id: int, payload: dict):
+    desc         = (payload.get("description") or "").strip()
+    payer_id     = payload.get("payer_member_id")
+    participants = payload.get("participants") or []
+    amount       = payload.get("amount")
+
+    if not desc:
+        raise HTTPException(400, "Description required")
+    try:
+        amount = float(amount)
+    except Exception:
+        raise HTTPException(400, "Amount must be a number")
+    if not (amount > 0):
+        raise HTTPException(400, "Amount must be > 0")
+
+    with Session(engine) as s:
+        expense = s.get(Expense, expense_id)
+        if not expense:
+            raise HTTPException(404, "Expense not found")
+
+        expense.description    = desc
+        expense.amount         = round(amount, 2)
+        expense.payer_member_id = payer_id
+
+        # Replace participants
+        old_parts = s.exec(select(ExpenseParticipant).where(ExpenseParticipant.expense_id == expense_id)).all()
+        for p in old_parts:
+            s.delete(p)
+        for pid in participants:
+            s.add(ExpenseParticipant(expense_id=expense_id, member_id=pid))
+
+        s.commit()
+        return {"ok": True}
